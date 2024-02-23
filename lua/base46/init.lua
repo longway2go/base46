@@ -1,15 +1,35 @@
 local M = {}
 local g = vim.g
 local config = require("core.utils").load_config()
+
+-- 获取当前正在执行的Lua代码所在的目录路径
+-- 如：当前代码位于：~/.local/share/nvim/lazy/base46/lua/base46/init.lua
+-- 则：base46_path="~/.local/share/nvim/lazy/base46/lua"
 local base46_path = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h")
 
+-- [[
+-- M.get_theme_tb()，用于获取指定主题类型的配置表格。
+-- 优先返回默认主题
+-- 如果默认主题不存在，则使用用户自定义主题
+-- 否则，报错："No such theme!"
+-- 还需要实际运行、调试下才好
+-- ]]
 M.get_theme_tb = function(type)
+  -- default_path: 默认主题文件路径。具体数值是多少，不知道？
   local default_path = "base46.themes." .. g.nvchad_theme
+
+  -- user_path: 用户自定义主题文件路径
   local user_path = "custom.themes." .. g.nvchad_theme
 
+  -- pcall()以受保护的方式执行代码
+  -- 使用pcall()尝试加载默认主题文件
   local present1, default_theme = pcall(require, default_path)
+  -- 使用pcall()尝试加载用户自定义主题文件
   local present2, user_theme = pcall(require, user_path)
 
+  -- 优先返回默认主题
+  -- 如果默认主题不存在，则使用用户自定义主题
+  -- 否则，报错："No such theme!"
   if present1 then
     return default_theme[type]
   elseif present2 then
@@ -88,9 +108,14 @@ M.extend_default_hl = function(highlights)
   end
 end
 
+-- 根据给定的主题名，返回对应的高亮配置方案，以表的形式
 M.load_highlight = function(group, is_extended)
   local str = is_extended and "extended_" or ""
+
+  -- 拼装并加载特定lua模块
   group = require("base46." .. str .. "integrations." .. group)
+
+  -- 返回对应主题表
   M.extend_default_hl(group)
   return group
 end
@@ -115,6 +140,7 @@ M.table_to_str = function(tb)
   return result
 end
 
+-- 将tb转为字符串，写入到`vim.g.base46_cache .. filename`所对应的文件中
 M.saveStr_to_cache = function(filename, tb)
   -- Thanks to https://github.com/nullchilly and https://github.com/EdenEast/nightfox.nvim
   -- It helped me understand string.dump stuff
@@ -132,26 +158,46 @@ M.saveStr_to_cache = function(filename, tb)
 end
 
 M.compile = function()
+  -- vim.g.base46_cache缓存了最近使用的Base46编码/解码结果，以便提高性能。
+  -- vim.g.base46_cache是一个文件夹,位于~/.config/nvim/plugins/base46目录下
   if not vim.loop.fs_stat(vim.g.base46_cache) then
+    -- 若vim.g.base46_cache缓存目录不存在，则创建
     vim.fn.mkdir(vim.g.base46_cache, "p")
   end
 
   -- All integration modules, each file returns a table
+  -- hl_files="~/.local/share/nvim/lazy/base46/lua/integrations" --> 好像不对的
+  -- hl_files="~/.local/share/nvim/lazy/base46/lua/base46/integrations" --> 猜测是这个，有待确定
+  -- hl_files目录下包含多个文件，每个文件负责定义特定语言或主题的高亮配置
   local hl_files = base46_path .. "/integrations"
 
+  -- 遍历文件
+  -- vim.fn.readdir()用于读取给定目录中的所有文件名
   for _, file in ipairs(vim.fn.readdir(hl_files)) do
     -- skip caching some files
     if file ~= "statusline" or file ~= "treesitter" then
+      -- 跳过statusline.lua和treesitter.lua文件
+
+      -- 获取文件名
+      -- 从file的完整路径中只提取到文件名，去除路径部分
       local filename = vim.fn.fnamemodify(file, ":r")
+
+      -- 加载并缓存高亮配置
+      -- M.load_highlight(filename)：加载指定文件中的高亮配置，返回一个包含高亮定义的表。
+      -- M.saveStr_to_cache(filename, ...)：将加载的配置存储到缓存中，以便后续快速访问。
       M.saveStr_to_cache(filename, M.load_highlight(filename))
     end
   end
 
+  -- 获取自定义配置列表
+  -- 从NvChad配置中获取名为extended_integrations的值
   -- look for custom cached highlight files
   local extended_integrations = config.ui.extended_integrations
 
   if extended_integrations then
+    -- 遍历并缓存自定义配置
     for _, filename in ipairs(extended_integrations) do
+
       M.saveStr_to_cache(filename, M.load_highlight(filename, true))
     end
   end
